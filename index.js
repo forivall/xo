@@ -32,12 +32,23 @@ const processReport = (report, opts) => {
 };
 
 const runEslint = (paths, opts) => {
-	const config = optionsManager.buildConfig(opts);
+  const config = optionsManager.buildConfig(opts);
 	const engine = new eslint.CLIEngine(config);
 	const report = engine.executeOnFiles(paths, config);
 
 	return processReport(report, opts);
 };
+
+const getFilename = (opts, forIgnore) => {
+  if (forIgnore) {
+    if (opts.ignoresRoot) {
+      return path.relative(opts.ignoresRoot, opts.filename)
+    }
+  } else if (opts.overridesRoot) {
+    return path.relative(opts.overridesRoot, opts.filename)
+  }
+  return path.relative(opts.cwd, opts.filename)
+}
 
 module.exports.lintText = (str, opts) => {
 	opts = optionsManager.preprocess(opts);
@@ -46,7 +57,7 @@ module.exports.lintText = (str, opts) => {
 		const {overrides} = opts;
 		delete opts.overrides;
 
-		const filename = path.relative(opts.cwd, opts.filename);
+		const filename = getFilename(opts);
 
 		const foundOverrides = optionsManager.findApplicableOverrides(filename, overrides);
 		opts = optionsManager.mergeApplicableOverrides(opts, foundOverrides.applicable);
@@ -60,7 +71,7 @@ module.exports.lintText = (str, opts) => {
 	}
 
 	if (opts.filename) {
-		const filename = path.relative(opts.cwd, opts.filename);
+		const filename = getFilename(opts, true);
 
 		if (multimatch(filename, opts.ignores).length > 0 ||
 			globby.gitignore.sync({cwd: opts.cwd, ignore: opts.ignores})(opts.filename)) {
@@ -84,7 +95,13 @@ module.exports.lintText = (str, opts) => {
 };
 
 module.exports.lintFiles = (patterns, opts) => {
-	opts = optionsManager.preprocess(opts);
+  opts = optionsManager.preprocess(opts);
+
+  if (opts.ignoresPrefix) {
+    patterns = patterns.map((pattern) => opts.ignoresPrefix + '/' + pattern)
+    opts.cwd = opts.ignoresRoot
+  }
+  console.log(opts.ignoresPrefix, opts.ignoresRoot, patterns)
 
 	const isEmptyPatterns = patterns.length === 0;
 	const defaultPattern = `**/*.{${opts.extensions.join(',')}}`;
@@ -96,6 +113,7 @@ module.exports.lintFiles = (patterns, opts) => {
 		// Filter out unwanted file extensions
 		// For silly users that don't specify an extension in the glob pattern
 		if (!isEmptyPatterns) {
+
 			paths = paths.filter(filePath => {
 				const ext = path.extname(filePath).replace('.', '');
 				return opts.extensions.includes(ext);
@@ -107,7 +125,7 @@ module.exports.lintFiles = (patterns, opts) => {
 		}
 
 		const {overrides} = opts;
-		delete opts.overrides;
+    delete opts.overrides;
 
 		const grouped = optionsManager.groupConfigs(paths, opts, overrides);
 
